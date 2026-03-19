@@ -1,0 +1,10 @@
+# 过滤 qwen-code 目录
+qwen-code/
+
+# 通用忽略规则
+node_modules/
+dist/
+.env
+*.log
+.DS_Store
+__MACOSX/
