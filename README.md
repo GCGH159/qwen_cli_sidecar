@@ -173,7 +173,13 @@ QWEN_DEFAULT_PROJECT=default-project
 
 ### 前端实时更新说明
 
-前端采用轮询方式获取会话状态，每秒调用一次 `/sessions/snapshot` 接口查询最新状态。后端也支持 WebSocket 实时推送，可通过 `/ws/sessions/:session_id` 连接实现实时更新。
+前端采用 WebSocket 方式实时接收会话状态更新。创建会话后自动连接 `/ws/sessions/:session_id` 端点，接收实时事件推送，包括：
+- 会话状态变化
+- AI 输出更新
+- 工具调用请求
+- 运行结果
+
+连接状态会显示在界面右上角，支持自动重连。
 
 ## 会话持久化
 
