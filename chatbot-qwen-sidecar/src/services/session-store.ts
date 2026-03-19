@@ -1,4 +1,7 @@
 import { randomUUID } from "node:crypto";
+import { mkdir, readFile, writeFile, readdir } from "node:fs/promises";
+import { join } from "node:path";
+import { homedir } from "node:os";
 
 import type {
   LiveSessionEvent,
@@ -23,12 +26,106 @@ type SessionWaiter = {
 
 type SessionSubscriber = (event: LiveSessionEvent) => void;
 
+interface PersistedSessionRecord {
+  goSessionId: string;
+  sidecarSessionId: string;
+  userId: string;
+  projectId: string;
+  workspaceDir: string;
+  sdkSessionId: string;
+  shouldResume: boolean;
+  activeRunId?: string;
+  lastStatus: SidecarStatus;
+  lastStatusText: string;
+  lastOutput: string;
+  recentEvents: RecentEvent[];
+  eventVersion: number;
+  updatedAt: number;
+  pendingRequest?: PendingRequest;
+}
+
 export class SessionStore {
   private readonly sessions = new Map<string, SessionRecord>();
   private readonly waiters = new Map<string, Set<SessionWaiter>>();
   private readonly subscribers = new Map<string, Set<SessionSubscriber>>();
+  private readonly storeDir: string;
+  private readonly recentEventsLimit: number;
 
-  constructor(private readonly recentEventsLimit = 20) {}
+  constructor(recentEventsLimit = 20, storeDir?: string) {
+    this.recentEventsLimit = recentEventsLimit;
+    this.storeDir = storeDir || join(homedir(), ".qwen", "sidecar-sessions");
+    void this.initStore();
+  }
+
+  private async initStore(): Promise<void> {
+    try {
+      await mkdir(this.storeDir, { recursive: true });
+      await this.loadSessions();
+    } catch (err) {
+      console.error("Failed to initialize session store:", err);
+    }
+  }
+
+  private async loadSessions(): Promise<void> {
+    try {
+      const files = await readdir(this.storeDir);
+      for (const file of files) {
+        if (!file.endsWith(".json")) continue;
+        try {
+          const content = await readFile(join(this.storeDir, file), "utf-8");
+          const persisted: PersistedSessionRecord = JSON.parse(content);
+          const session: SessionRecord = {
+            ...persisted,
+            pendingResolvers: new Map<string, PendingResolver>(),
+            currentQuery: undefined,
+          };
+          this.sessions.set(session.goSessionId, session);
+        } catch {
+          console.warn(`Failed to load session file: ${file}`);
+        }
+      }
+    } catch {
+      // 目录不存在或为空，第一次运行
+    }
+  }
+
+  private getSessionFilePath(sessionId: string): string {
+    return join(this.storeDir, `${sessionId}.json`);
+  }
+
+  private async saveSession(session: SessionRecord): Promise<void> {
+    try {
+      const persisted: PersistedSessionRecord = {
+        goSessionId: session.goSessionId,
+        sidecarSessionId: session.sidecarSessionId,
+        userId: session.userId,
+        projectId: session.projectId,
+        workspaceDir: session.workspaceDir,
+        sdkSessionId: session.sdkSessionId,
+        shouldResume: session.shouldResume,
+        activeRunId: session.activeRunId,
+        lastStatus: session.lastStatus,
+        lastStatusText: session.lastStatusText,
+        lastOutput: session.lastOutput,
+        recentEvents: session.recentEvents,
+        eventVersion: session.eventVersion,
+        updatedAt: session.updatedAt,
+        pendingRequest: session.pendingRequest,
+      };
+      await writeFile(this.getSessionFilePath(session.goSessionId), JSON.stringify(persisted, null, 2), "utf-8");
+    } catch (err) {
+      console.error(`Failed to save session ${session.goSessionId}:`, err);
+    }
+  }
+
+  private async deleteSessionFile(sessionId: string): Promise<void> {
+    try {
+      const { unlink } = await import("node:fs/promises");
+      await unlink(this.getSessionFilePath(sessionId));
+    } catch {
+      // 文件不存在，忽略
+    }
+  }
 
   ensureSession(userId: string, goSessionId: string, projectId: string, statusText?: string, workspaceDir?: string): SessionRecord {
     const existing = this.sessions.get(goSessionId);
@@ -58,6 +155,7 @@ export class SessionStore {
       this.sessions.set(goSessionId, merged);
       this.notifyWaiters(merged);
       this.notifySubscribers(merged);
+      void this.saveSession(merged);
       return merged;
     }
     const created: SessionRecord = {
@@ -79,6 +177,7 @@ export class SessionStore {
     this.sessions.set(goSessionId, created);
     this.notifyWaiters(created);
     this.notifySubscribers(created);
+    void this.saveSession(created);
     return created;
   }
 
@@ -108,6 +207,7 @@ export class SessionStore {
     this.sessions.set(sessionId, merged);
     this.notifyWaiters(merged);
     this.notifySubscribers(merged);
+    void this.saveSession(merged);
     return merged;
   }
 
@@ -138,6 +238,7 @@ export class SessionStore {
     this.sessions.set(sessionId, merged);
     this.notifyWaiters(merged);
     this.notifySubscribers(merged);
+    void this.saveSession(merged);
     return merged;
   }
 
@@ -168,6 +269,7 @@ export class SessionStore {
     this.sessions.set(sessionId, session);
     this.notifyWaiters(session);
     this.notifySubscribers(session);
+    void this.saveSession(session);
     return session;
   }
 
@@ -183,6 +285,7 @@ export class SessionStore {
     this.sessions.set(sessionId, session);
     this.notifyWaiters(session);
     this.notifySubscribers(session);
+    void this.saveSession(session);
     return resolver;
   }
 
@@ -197,6 +300,7 @@ export class SessionStore {
     this.sessions.set(sessionId, session);
     this.notifyWaiters(session);
     this.notifySubscribers(session);
+    void this.saveSession(session);
     return session;
   }
 
@@ -212,6 +316,7 @@ export class SessionStore {
     this.sessions.set(sessionId, session);
     this.notifyWaiters(session);
     this.notifySubscribers(session);
+    void this.saveSession(session);
     return session;
   }
 

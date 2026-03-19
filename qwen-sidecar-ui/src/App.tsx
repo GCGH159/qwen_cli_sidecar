@@ -31,6 +31,12 @@ interface SendMessageRequest {
   message: string
 }
 
+interface CancelRunRequest {
+  session_id: string
+  sidecar_session_id?: string
+  run_id?: string
+}
+
 function App() {
   const [activeTab, setActiveTab] = useState<'sessions' | 'runs'>('sessions')
   
@@ -217,6 +223,45 @@ function App() {
     } catch (err) {
       setError('网络错误: ' + (err as Error).message)
       setChatHistory(prev => [...prev.slice(0, -1)]) // 移除刚才添加的用户消息
+    } finally {
+      setLoading(false)
+    }
+  }
+
+  // 取消运行
+  const cancelRun = async () => {
+    if (!currentSession) {
+      setError('请先创建会话')
+      return
+    }
+
+    setLoading(true)
+    setError('')
+
+    try {
+      const response = await fetch(`${API_BASE_URL}/runs/cancel`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          session_id: currentSession.session_id
+        } as CancelRunRequest)
+      })
+
+      const data = await response.json()
+      if (response.ok) {
+        // 更新会话状态
+        setCurrentSession({
+          ...currentSession,
+          status: data.status || 'idle',
+          status_text: data.status_text || '已取消当前运行',
+          output: data.output || ''
+        })
+        setChatHistory(prev => [...prev, {role: 'system', content: '运行已取消'}])
+      } else {
+        setError(data.error || '取消运行失败')
+      }
+    } catch (err) {
+      setError('网络错误: ' + (err as Error).message)
     } finally {
       setLoading(false)
     }
@@ -432,11 +477,18 @@ function App() {
                   type="text"
                   value={message}
                   onChange={(e) => setMessage(e.target.value)}
-                  onKeyPress={(e) => e.key === 'Enter' && sendMessage()}
+                  onKeyPress={(e) => e.key === 'Enter' && !loading && sendMessage()}
                   placeholder="输入消息..."
                   disabled={!currentSession || loading}
                   className="flex-1 px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500 disabled:bg-gray-100"
                 />
+                <button
+                  onClick={cancelRun}
+                  disabled={!currentSession || !loading}
+                  className="bg-red-500 text-white px-6 py-2 rounded-md hover:bg-red-600 disabled:bg-gray-400"
+                >
+                  取消
+                </button>
                 <button
                   onClick={sendMessage}
                   disabled={!currentSession || loading || !message.trim()}

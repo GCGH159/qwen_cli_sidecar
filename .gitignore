@@ -8,3 +8,9 @@ dist/
 *.log
 .DS_Store
 __MACOSX/
+
+# lock 文件
+package-lock.json
+*/package-lock.json
+pnpm-lock.yaml
+*/pnpm-lock.yaml
