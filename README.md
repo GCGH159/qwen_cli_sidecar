@@ -117,6 +117,64 @@ QWEN_DEFAULT_PROJECT=default-project
 | `/runs/input` | POST | 响应文本输入 |
 | `/runs/cancel` | POST | 取消运行 |
 
+## 获取会话快照
+
+**接口**: `POST /sessions/snapshot`
+
+**请求体**:
+```json
+{
+  "session_id": "test_session_123",
+  "sidecar_session_id": "optional_sidecar_session_id"
+}
+```
+
+**响应**:
+```json
+{
+  "session_id": "test_session_123",
+  "sdk_session_id": "abc123-def456-ghi789",
+  "project_id": "chatbot-go",
+  "run_id": "run-uuid-if-running",
+  "status": "idle | running | awaiting_approval | awaiting_selection | awaiting_text_input | error",
+  "status_text": "当前状态的描述文本",
+  "output": "AI 的输出内容",
+  "pending_request": {
+    "kind": "approval | selection | text_input",
+    "request_id": "uuid",
+    "prompt": "用户需要确认的提示文本",
+    "options": [
+      { "id": "option_1", "label": "选项1" },
+      { "id": "option_2", "label": "选项2" }
+    ]
+  },
+  "recent_events": [
+    {
+      "type": "run.started | run.resumed | run.canceled | tool_use | ...",
+      "text": "事件描述",
+      "created_at": 1234567890
+    }
+  ],
+  "event_version": 1,
+  "updated_at": 1234567890
+}
+```
+
+### 状态说明
+
+| 状态 | 说明 |
+|------|------|
+| `idle` | 会话空闲，无运行中的任务 |
+| `running` | Qwen 正在处理请求 |
+| `awaiting_approval` | 等待用户批准工具调用 |
+| `awaiting_selection` | 等待用户选择选项 |
+| `awaiting_text_input` | 等待用户输入文本 |
+| `error` | 发生错误 |
+
+### 前端实时更新说明
+
+前端采用轮询方式获取会话状态，每秒调用一次 `/sessions/snapshot` 接口查询最新状态。后端也支持 WebSocket 实时推送，可通过 `/ws/sessions/:session_id` 连接实现实时更新。
+
 ## 会话持久化
 
 会话数据存储在 `~/.qwen/sidecar-sessions/` 目录下，每个会话保存为一个 JSON 文件。服务重启后会自动加载历史会话。
