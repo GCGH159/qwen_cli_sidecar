@@ -5,6 +5,8 @@ import type {
   EnsureSessionRequest,
   GetSessionMessagesRequest,
   GetSessionSnapshotRequest,
+  SdkListSessionsRequest,
+  GetSdkSessionMessagesRequest,
   ListSessionsRequest,
 } from "../types.js";
 
@@ -29,10 +31,22 @@ export function registerSessionRoutes(app: FastifyInstance, runtime: AgentRuntim
     );
   });
 
+  // Sidecar 维护的会话列表（当前内存中的活跃会话）
   app.post<{ Body: ListSessionsRequest }>("/sessions/list", async (request) => {
     return runtime.listSessions(request.body ?? {});
   });
 
+  // SDK 维护的会话历史列表（存储在 ~/.qwen/projects/{projectHash}/chats/）
+  app.post<{ Body: SdkListSessionsRequest }>("/sessions/sdk/list", async (request, reply) => {
+    const workspaceDir = request.body?.workspace_dir?.trim();
+    if (!workspaceDir) {
+      reply.code(400);
+      return { error: "workspace_dir 不能为空" };
+    }
+    return runtime.listSdkSessions(request.body);
+  });
+
+  // Sidecar 会话的消息列表（已废弃，返回空列表）
   app.post<{ Body: GetSessionMessagesRequest }>("/sessions/messages", async (request, reply) => {
     const sessionId = request.body?.sdk_session_id?.trim();
     if (!sessionId) {
@@ -42,12 +56,32 @@ export function registerSessionRoutes(app: FastifyInstance, runtime: AgentRuntim
     return runtime.getSessionMessages(request.body);
   });
 
-  app.post<{ Body: GetSessionSnapshotRequest }>("/sessions/snapshot", async (request, reply) => {
+  // SDK 会话的消息详情
+  app.post<{ Body: GetSdkSessionMessagesRequest }>("/sessions/sdk/messages", async (request, reply) => {
+    const workspaceDir = request.body?.workspace_dir?.trim();
+    if (!workspaceDir) {
+      reply.code(400);
+      return { error: "workspace_dir 不能为空" };
+    }
     const sessionId = request.body?.session_id?.trim();
     if (!sessionId) {
       reply.code(400);
       return { error: "session_id 不能为空" };
     }
-    return runtime.getSessionSnapshot(request.body);
+    return runtime.getSdkSessionMessages(request.body);
   });
+
+  app.post<{ Body: GetSessionSnapshotRequest }>(
+    "/sessions/snapshot",
+    async (request, reply) => {
+      // 禁用此路由的请求日志
+      request.log.level = "debug";
+      const sessionId = request.body?.session_id?.trim();
+      if (!sessionId) {
+        reply.code(400);
+        return { error: "session_id 不能为空" };
+      }
+      return runtime.getSessionSnapshot(request.body);
+    },
+  );
 }

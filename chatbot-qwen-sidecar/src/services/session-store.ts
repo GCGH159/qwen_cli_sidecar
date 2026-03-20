@@ -182,7 +182,18 @@ export class SessionStore {
   }
 
   getSession(sessionId: string): SessionRecord | undefined {
-    return this.sessions.get(sessionId);
+    // 先尝试用 goSessionId 查找
+    const session = this.sessions.get(sessionId);
+    if (session) {
+      return session;
+    }
+    // 如果找不到，尝试用 sidecarSessionId 查找
+    for (const s of this.sessions.values()) {
+      if (s.sidecarSessionId === sessionId) {
+        return s;
+      }
+    }
+    return undefined;
   }
 
   requireSession(sessionId: string): SessionRecord {
@@ -191,6 +202,13 @@ export class SessionStore {
       throw new Error("Claude 会话不存在或已过期");
     }
     return session;
+  }
+
+  /**
+   * 获取所有会话列表
+   */
+  getAllSessions(): SessionRecord[] {
+    return Array.from(this.sessions.values());
   }
 
   updateSession(sessionId: string, patch: Partial<SessionRecord>): SessionRecord {

@@ -14,7 +14,8 @@ qwen_cli_sidecar/
 │   │   ├── services/
 │   │   │   ├── agent-runtime.ts   # 核心运行时
 │   │   │   ├── request-mapper.ts   # 请求映射
-│   │   │   └── session-store.ts    # 会话存储（文件持久化）
+│   │   │   ├── session-store.ts    # Sidecar 会话存储
+│   │   │   └── sdk-session-service.ts  # SDK 会话历史服务
 │   │   ├── app.ts           # Fastify 应用
 │   │   ├── config.ts        # 配置管理
 │   │   ├── index.ts         # 入口文件
@@ -41,10 +42,12 @@ qwen_cli_sidecar/
 - **实时监控** — WebSocket 订阅会话状态变化
 - **会话中断** — 支持取消正在运行的会话
 - **MCP 集成** — 支持 MCP 服务器连接
+- **SDK 会话历史** — 查询 SDK 持久化的历史会话记录
 
 ### 前端界面 (qwen-sidecar-ui)
 
 - **会话管理** — 创建、查看会话状态
+- **SDK 会话历史** — 查看 SDK 存储的历史会话和消息记录
 - **实时对话** — 发送消息并接收 AI 回复
 - **中断功能** — 可随时取消正在运行的请求
 - **状态显示** — 实时展示会话状态和最近事件
@@ -108,14 +111,99 @@ QWEN_DEFAULT_PROJECT=default-project
 | `/health` | GET | 健康检查 |
 | `/projects` | GET | 获取项目列表 |
 | `/sessions/ensure` | POST | 创建/确保会话 |
-| `/sessions/list` | POST | 列出会话 |
-| `/sessions/messages` | POST | 获取会话消息 |
+| `/sessions/list` | POST | 列出 Sidecar 活跃会话 |
 | `/sessions/snapshot` | POST | 获取会话快照 |
+| `/sessions/sdk/list` | POST | 列出 SDK 会话历史 |
+| `/sessions/sdk/messages` | POST | 获取 SDK 会话消息详情 |
 | `/runs/message` | POST | 发送消息 |
 | `/runs/approval` | POST | 响应批准请求 |
 | `/runs/selection` | POST | 响应选择请求 |
 | `/runs/input` | POST | 响应文本输入 |
 | `/runs/cancel` | POST | 取消运行 |
+
+## SDK 会话历史接口
+
+SDK 会话历史接口用于查询 SDK 持久化的历史会话记录，存储在 `~/.qwen/projects/{projectId}/chats/` 目录。
+
+### 列出 SDK 会话历史
+
+**接口**: `POST /sessions/sdk/list`
+
+**请求体**:
+```json
+{
+  "workspace_dir": "/home/admin/com/workspace 10",
+  "limit": 20
+}
+```
+
+**响应**:
+```json
+{
+  "project_id": "",
+  "items": [
+    {
+      "session_id": "dda2bf15-13e3-4991-8301-df7ce1da25a1",
+      "cwd": "/home/admin/com/workspace 10",
+      "start_time": "2026-03-20T02:40:23.921Z",
+      "prompt": "你好，请介绍一下你自己",
+      "message_count": 110
+    }
+  ],
+  "has_more": false
+}
+```
+
+### 获取 SDK 会话消息详情
+
+**接口**: `POST /sessions/sdk/messages`
+
+**请求体**:
+```json
+{
+  "workspace_dir": "/home/admin/com/workspace 10",
+  "session_id": "dda2bf15-13e3-4991-8301-df7ce1da25a1"
+}
+```
+
+**响应**:
+```json
+{
+  "project_id": "",
+  "session_id": "dda2bf15-13e3-4991-8301-df7ce1da25a1",
+  "data": {
+    "session_id": "dda2bf15-13e3-4991-8301-df7ce1da25a1",
+    "project_hash": "-home-admin-com-workspace-10",
+    "start_time": "2026-03-20T02:40:23.921Z",
+    "last_updated": "2026-03-20T03:30:00.000Z",
+    "messages": [
+      {
+        "uuid": "msg-uuid-1",
+        "type": "user",
+        "timestamp": "2026-03-20T02:40:23.921Z",
+        "text": "你好",
+        "role": "user"
+      },
+      {
+        "uuid": "msg-uuid-2",
+        "type": "assistant",
+        "timestamp": "2026-03-20T02:40:25.000Z",
+        "text": "你好！有什么可以帮助你的吗？",
+        "role": "model"
+      }
+    ]
+  }
+}
+```
+
+### 存储路径说明
+
+SDK 会话根据工作目录路径生成项目目录名，规则是将路径中非字母数字字符替换为 `-`：
+
+| 工作目录 | SDK 存储路径 |
+|---------|-------------|
+| `/home/admin/com/workspace 10` | `~/.qwen/projects/-home-admin-com-workspace-10/chats/` |
+| `/home/admin/project` | `~/.qwen/projects/-home-admin-project/chats/` |
 
 ## 获取会话快照
 

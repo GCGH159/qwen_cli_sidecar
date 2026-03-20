@@ -14,6 +14,8 @@ import type {
   GetSessionMessagesRequest,
   GetSessionMessagesResponse,
   GetSessionSnapshotRequest,
+  GetSdkSessionMessagesRequest,
+  GetSdkSessionMessagesResponse,
   HistorySessionMessage,
   ListProjectsResponse,
   ListSessionsRequest,
@@ -23,11 +25,13 @@ import type {
   RecentEvent,
   SelectionRequest,
   SendMessageRequest,
+  SdkListSessionsResponse,
   SessionRecord,
   SidecarResponse,
   TextInputRequest,
 } from "../types.js";
 import { SessionStore } from "./session-store.js";
+import { SdkSessionService } from "./sdk-session-service.js";
 import {
   buildApprovalPendingRequest,
   createAskUserSpec,
@@ -88,25 +92,110 @@ export class AgentRuntime {
     return this.store.toResponse(attached);
   }
 
+  /**
+   * 列出 Sidecar 维护的会话列表
+   *
+   * 返回当前 sidecar 内存中的会话状态，用于 UI 展示活跃会话。
+   */
   async listSessions(input: ListSessionsRequest = {}): Promise<ListSessionsResponse> {
-    // Qwen SDK 不支持 listSessions，返回空列表
     const project = this.resolveProject(input.project_id);
+    // Sidecar 当前内存中的会话列表
+    const sessions = this.store.getAllSessions();
+    const items = sessions
+      .filter((s) => s.projectId === project.id)
+      .map((s) => ({
+        session_id: s.sidecarSessionId,
+        project_id: s.projectId,
+        summary: s.lastStatusText,
+        last_modified: s.updatedAt,
+        created_at: s.updatedAt,
+        cwd: s.workspaceDir,
+      }));
+
     return {
       project_id: project.id,
-      items: [],
+      items,
       limit: input.limit || 20,
       offset: input.offset || 0,
       has_more: false,
     };
   }
 
+  /**
+   * 列出 SDK 维护的会话历史列表
+   *
+   * 返回 SDK 存储在 ~/.qwen/projects/{projectHash}/chats/ 中的会话文件列表。
+   * 这些是完整的历史会话，包含所有对话记录。
+   */
+  async listSdkSessions(input: { workspace_dir: string; limit?: number; cursor?: number }): Promise<SdkListSessionsResponse> {
+    const workspaceDir = input.workspace_dir?.trim();
+    if (!workspaceDir) {
+      throw new Error("workspace_dir 不能为空");
+    }
+
+    const sdkService = new SdkSessionService(workspaceDir);
+    const result = await sdkService.listSessions(input.limit || 20, input.cursor);
+
+    return {
+      project_id: "",
+      items: result.items,
+      has_more: result.has_more,
+      next_cursor: result.next_cursor,
+    };
+  }
+
+  /**
+   * 获取 SDK 会话的消息列表
+   *
+   * 从 SDK 存储的 JSONL 文件中读取完整的对话历史。
+   */
+  async getSdkSessionMessages(input: { workspace_dir: string; session_id: string }): Promise<GetSdkSessionMessagesResponse> {
+    const workspaceDir = input.workspace_dir?.trim();
+    if (!workspaceDir) {
+      return {
+        project_id: "",
+        session_id: input.session_id,
+        error: "workspace_dir 不能为空",
+      };
+    }
+
+    const sessionId = input.session_id.trim();
+    if (!sessionId) {
+      return {
+        project_id: "",
+        session_id: sessionId,
+        error: "session_id 不能为空",
+      };
+    }
+
+    const sdkService = new SdkSessionService(workspaceDir);
+    const data = await sdkService.getSessionMessages(sessionId);
+
+    if (!data) {
+      return {
+        project_id: "",
+        session_id: sessionId,
+        error: "会话不存在或无法读取",
+      };
+    }
+
+    return {
+      project_id: "",
+      session_id: sessionId,
+      data,
+    };
+  }
+
+  /**
+   * 获取 Sidecar 会话的消息列表（已废弃，保留兼容）
+   */
   async getSessionMessages(input: GetSessionMessagesRequest): Promise<GetSessionMessagesResponse> {
-    // Qwen SDK 不支持 getSessionMessages，返回空列表
     const project = this.resolveProject(input.project_id);
     const sessionId = input.sdk_session_id.trim();
     if (!sessionId) {
       throw new Error("sdk_session_id 不能为空");
     }
+    // Sidecar 不存储完整历史，返回空列表
     return {
       project_id: project.id,
       sdk_session_id: sessionId,
@@ -159,6 +248,10 @@ export class AgentRuntime {
       },
       "Starting Qwen run",
     );
+
+    // 记录用户消息
+    this.store.appendRecentEvent(session.goSessionId, "user.message", message);
+
     const options = this.buildQueryOptions(session.goSessionId, runId);
     const abortController = options.abortController;
     const agentQuery = query({ prompt: message, options });
@@ -184,17 +277,8 @@ export class AgentRuntime {
 
     void this.consumeQuery(session.goSessionId, runId, agentQuery);
 
-    return this.waitForSnapshot(
-      session.goSessionId,
-      next,
-      (updated) =>
-        Boolean(updated.pendingRequest) ||
-        !updated.currentQuery ||
-        updated.lastStatus !== next.lastStatus ||
-        updated.lastStatusText !== next.lastStatusText ||
-        updated.lastOutput !== next.lastOutput ||
-        updated.eventVersion !== next.eventVersion,
-    );
+    // 直接返回当前状态，前端通过轮询获取更新
+    return this.store.toResponse(next);
   }
 
   async respondApproval(input: ApprovalRequest): Promise<SidecarResponse> {
@@ -205,6 +289,11 @@ export class AgentRuntime {
     }
 
     const decision = normalizeApprovalDecision(input.decision);
+    this.logger.info(
+      { sessionId: session.goSessionId, requestId: input.request_id, decision },
+      "Approval response received",
+    );
+
     const baseline = this.updateSessionState(
       session.goSessionId,
       {
@@ -217,7 +306,8 @@ export class AgentRuntime {
     );
 
     resolver.resolve({ kind: "approval", decision });
-    return this.waitForContinuation(session.goSessionId, baseline);
+    // 直接返回状态，前端通过轮询获取更新
+    return this.store.toResponse(baseline);
   }
 
   async respondSelection(input: SelectionRequest): Promise<SidecarResponse> {
@@ -244,7 +334,8 @@ export class AgentRuntime {
     );
 
     resolver.resolve({ kind: "selection", optionId });
-    return this.waitForContinuation(session.goSessionId, baseline);
+    // 直接返回状态，前端通过轮询获取更新
+    return this.store.toResponse(baseline);
   }
 
   async respondTextInput(input: TextInputRequest): Promise<SidecarResponse> {
@@ -266,7 +357,8 @@ export class AgentRuntime {
     );
 
     resolver.resolve({ kind: "text_input", text: input.text });
-    return this.waitForContinuation(session.goSessionId, baseline);
+    // 直接返回状态，前端通过轮询获取更新
+    return this.store.toResponse(baseline);
   }
 
   async cancelRun(input: CancelRunRequest): Promise<SidecarResponse> {
@@ -408,46 +500,17 @@ export class AgentRuntime {
       pendingRequest.prompt || "Qwen 正在等待你的输入",
     );
 
+    this.logger.info(
+      { sessionId, runId, requestId, kind: pendingRequest.kind, prompt: pendingRequest.prompt },
+      "Waiting for user approval/selection",
+    );
+
     try {
       const resolution = await resolutionPromise;
       this.assertRunActive(sessionId, runId);
       return resolution;
     } finally {
       this.store.consumePendingResolver(sessionId, requestId);
-    }
-  }
-
-  private async waitForContinuation(sessionId: string, baseline: SessionRecord): Promise<SidecarResponse> {
-    return this.waitForSnapshot(
-      sessionId,
-      baseline,
-      (updated) =>
-        Boolean(updated.pendingRequest) ||
-        !updated.currentQuery ||
-        updated.lastStatus !== baseline.lastStatus ||
-        updated.lastStatusText !== baseline.lastStatusText ||
-        updated.lastOutput !== baseline.lastOutput ||
-        updated.eventVersion !== baseline.eventVersion,
-    );
-  }
-
-  private async waitForSnapshot(
-    sessionId: string,
-    baseline: SessionRecord,
-    predicate: (session: SessionRecord) => boolean,
-  ): Promise<SidecarResponse> {
-    try {
-      const session = await this.store.waitForUpdate(
-        sessionId,
-        (updated) => updated.updatedAt > baseline.updatedAt && predicate(updated),
-        this.config.snapshotWaitMs,
-      );
-      return this.store.toResponse(session);
-    } catch (error) {
-      if (error instanceof Error && error.message.includes("超时")) {
-        return this.store.toResponse(this.store.requireSession(sessionId));
-      }
-      throw error;
     }
   }
 
@@ -526,6 +589,7 @@ export class AgentRuntime {
           return;
         }
         if (parsed.kind === "tool_use") {
+          this.logger.info({ sessionId, runId, tool: parsed.text }, "Tool use");
           this.updateSessionState(
             sessionId,
             {
@@ -538,6 +602,7 @@ export class AgentRuntime {
           return;
         }
         if (parsed.kind === "tool_result") {
+          this.logger.info({ sessionId, runId, result: parsed.text.slice(0, 200) }, "Tool result");
           this.updateSessionState(
             sessionId,
             {

@@ -39,17 +39,17 @@ export function createApp(config: SidecarConfig): FastifyInstance {
       const sessionId = readStringParam(request.params, "session_id");
       const sidecarSessionId = readOptionalStringParam(request.query, "sidecar_session_id");
       if (!sessionId) {
-        socket.close(1008, "session_id required");
+        socket.socket.close(1008, "session_id required");
         return;
       }
       try {
         const { initialEvent, unsubscribe } = runtime.subscribeSession(sessionId, sidecarSessionId, (event) => {
-          if (socket.readyState !== socket.OPEN) {
+          if (socket.socket.readyState !== 1) { // 1 = WebSocket.OPEN
             return;
           }
-          socket.send(JSON.stringify(event));
+          socket.socket.send(JSON.stringify(event));
         });
-        socket.send(JSON.stringify(initialEvent));
+        socket.socket.send(JSON.stringify(initialEvent));
         socket.on("close", () => {
           unsubscribe();
         });
@@ -58,7 +58,7 @@ export function createApp(config: SidecarConfig): FastifyInstance {
         });
       } catch (error) {
         const message = error instanceof Error ? error.message : "session stream unavailable";
-        socket.close(1011, message.slice(0, 120));
+        socket.socket.close(1011, message.slice(0, 120));
       }
     },
   );

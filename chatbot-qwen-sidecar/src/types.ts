@@ -120,6 +120,58 @@ export interface GetSessionMessagesResponse {
   has_more: boolean;
 }
 
+// ====== SDK 会话相关类型 ======
+
+export interface SdkSessionSummary {
+  session_id: string;
+  cwd: string;
+  start_time: string;
+  prompt: string;
+  git_branch?: string;
+  message_count: number;
+}
+
+export interface SdkListSessionsResponse {
+  project_id: string;
+  items: SdkSessionSummary[];
+  has_more: boolean;
+  next_cursor?: number;
+}
+
+export interface SdkSessionMessage {
+  uuid: string;
+  type: "user" | "assistant" | "tool_result" | "system";
+  timestamp: string;
+  text: string;
+  role?: string;
+}
+
+export interface SdkSessionDetail {
+  session_id: string;
+  project_hash: string;
+  start_time: string;
+  last_updated: string;
+  messages: SdkSessionMessage[];
+}
+
+export interface SdkListSessionsRequest {
+  workspace_dir: string;
+  limit?: number;
+  cursor?: number;
+}
+
+export interface GetSdkSessionMessagesRequest {
+  workspace_dir: string;
+  session_id: string;
+}
+
+export interface GetSdkSessionMessagesResponse {
+  project_id: string;
+  session_id: string;
+  data?: SdkSessionDetail;
+  error?: string;
+}
+
 export interface GetSessionSnapshotRequest {
   session_id: string;
   sidecar_session_id?: string;

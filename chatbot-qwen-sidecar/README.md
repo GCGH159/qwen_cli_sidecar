@@ -15,10 +15,9 @@ Qwen Sidecar 是一个基于 Qwen Code SDK 的 AI 助手服务，提供 HTTP 和
 - MCP 服务器集成
 - 会话管理
 - 实时状态监控
+- SDK 会话历史查询（`/sessions/sdk/list`、`/sessions/sdk/messages`）
 
 ### ❌ 不支持的功能（相比 Claude SDK）
-- 会话历史查询（`listSessions`、`getSessionMessages`）
-- 会话信息获取（`getSessionInfo`）
 - 工具进度消息（`tool_progress`）
 - 认证状态消息（`auth_status`）
 - 工具使用摘要（`tool_use_summary`）
