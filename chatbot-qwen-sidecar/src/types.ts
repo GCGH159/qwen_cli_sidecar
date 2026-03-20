@@ -56,6 +56,12 @@ export interface EnsureSessionRequest {
   workspace_dir?: string;
 }
 
+export interface ResolveSessionRequest {
+  sdk_session_id: string;
+  project_id?: string;
+  workspace_dir?: string;
+}
+
 export interface ListSessionsRequest {
   project_id?: string;
   limit?: number;

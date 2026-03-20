@@ -191,9 +191,9 @@ export class SessionStore {
     if (session) {
       return session;
     }
-    // 如果找不到，尝试用 sidecarSessionId 查找
+    // 如果找不到，尝试用 sidecarSessionId 或 sdkSessionId 查找
     for (const s of this.sessions.values()) {
-      if (s.sidecarSessionId === sessionId) {
+      if (s.sidecarSessionId === sessionId || s.sdkSessionId === sessionId) {
         return s;
       }
     }

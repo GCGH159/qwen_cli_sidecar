@@ -93,6 +93,51 @@ export class AgentRuntime {
   }
 
   /**
+   * 通过 SDK 会话 ID 获取或创建 sidecar 会话
+   *
+   * 用于从 SDK 会话历史列表点击进入时，能够找到或创建对应的 sidecar 会话。
+   */
+  async resolveSession(
+    sdkSessionId: string,
+    projectId?: string,
+    workspaceDir?: string,
+  ): Promise<SidecarResponse> {
+    const normalizedSdkSessionId = sdkSessionId.trim();
+    if (!normalizedSdkSessionId) {
+      throw new Error("sdk_session_id 不能为空");
+    }
+
+    // 1. 先尝试通过 sdkSessionId 查找已有的 sidecar 会话
+    const existing = this.store.getSession(normalizedSdkSessionId);
+    if (existing) {
+      return this.store.toResponse(existing);
+    }
+
+    // 2. 找不到则创建新会话，使用 sdkSessionId 作为 sidecarSessionId
+    const project = this.resolveProject(projectId);
+    const effectiveWorkspaceDir = workspaceDir?.trim() || project.workspaceDir;
+    const newSessionId = normalizedSdkSessionId; // 使用 sdkSessionId 作为新会话的 ID
+
+    const session = this.store.ensureSession(
+      "resolved-user", // 默认用户 ID
+      newSessionId,
+      project.id,
+      clip(`已关联 SDK 会话：${normalizedSdkSessionId}`, this.config.panelStatusLimit),
+      effectiveWorkspaceDir,
+    );
+
+    // 绑定 SDK 会话 ID
+    const attached = this.store.attachSdkSession(
+      session.goSessionId,
+      normalizedSdkSessionId,
+      project.id,
+      clip(`已关联 SDK 会话：${normalizedSdkSessionId}`, this.config.panelStatusLimit),
+    );
+
+    return this.store.toResponse(attached);
+  }
+
+  /**
    * 列出 Sidecar 维护的会话列表
    *
    * 返回当前 sidecar 内存中的会话状态，用于 UI 展示活跃会话。
