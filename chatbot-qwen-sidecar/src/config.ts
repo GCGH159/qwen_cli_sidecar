@@ -415,7 +415,7 @@ export function loadConfig(): SidecarConfig {
     thinkingMode: getEnvAsThinkingMode("QWEN_THINKING_MODE", "adaptive"),
     effort: getEnvAsEffort("QWEN_EFFORT", "high"),
     queryMaxTurns: getEnvAsInt("QWEN_QUERY_MAX_TURNS", 60),
-    includePartialMessages: getEnvAsBool("QWEN_INCLUDE_PARTIAL_MESSAGES", false),
+    includePartialMessages: getEnvAsBool("QWEN_INCLUDE_PARTIAL_MESSAGES", true),
     promptSuggestions: getEnvAsBool("QWEN_PROMPT_SUGGESTIONS", false),
     agentProgressSummaries: getEnvAsBool("QWEN_AGENT_PROGRESS_SUMMARIES", true),
     askUserPreviewFormat: getEnvAsPreviewFormat("QWEN_ASK_USER_PREVIEW_FORMAT", "markdown"),

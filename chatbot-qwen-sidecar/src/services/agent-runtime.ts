@@ -443,7 +443,10 @@ export class AgentRuntime {
       authType: this.config.qwenAuthType as 'openai' | 'qwen-oauth',
       ...(session.shouldResume ? { resume: session.sdkSessionId } : { sessionId: session.sdkSessionId }),
     };
-    this.logger.info({ model: this.config.model, authType: this.config.qwenAuthType }, "buildQueryOptions: 模型配置");
+    this.logger.info(
+      { model: this.config.model, authType: this.config.qwenAuthType, includePartialMessages: this.config.includePartialMessages },
+      "buildQueryOptions: 模型配置"
+    );
     return options;
   }
 
@@ -521,6 +524,8 @@ export class AgentRuntime {
   ): Promise<void> {
     try {
       for await (const message of agentQuery) {
+        // 调试日志：记录收到的消息类型
+        this.logger.debug({ sessionId, runId, type: message.type }, "Received SDK message");
         this.applyMessage(sessionId, runId, message);
       }
     } catch (error) {
@@ -710,7 +715,89 @@ export class AgentRuntime {
         return;
       }
       case "stream_event": {
-        // 处理流事件，暂时忽略
+        // 处理流式事件
+        this.logger.info({ sessionId, runId, eventType: message.event?.type }, "Received stream_event");
+        if (message.event) {
+          this.applyStreamEvent(sessionId, runId, message as Extract<SDKMessage, { type: "stream_event" }>, sdkPatch);
+        }
+        return;
+      }
+      default:
+        return;
+    }
+  }
+
+  private applyStreamEvent(
+    sessionId: string,
+    runId: string,
+    message: Extract<SDKMessage, { type: "stream_event" }>,
+    sdkPatch: { sdkSessionId: string; shouldResume: boolean } | undefined,
+  ): void {
+    const event = message.event;
+    const session = this.store.getSession(sessionId);
+    if (!session) {
+      return;
+    }
+
+    switch (event.type) {
+      case "content_block_delta": {
+        // 流式文本输出
+        const delta = event.delta;
+        this.logger.info({ sessionId, runId, deltaType: delta.type, deltaText: delta.type === "text_delta" ? delta.text?.slice(0, 50) : undefined }, "content_block_delta detail");
+        if (delta.type === "text_delta" && delta.text) {
+          // 累积流式文本到 lastOutput
+          const currentOutput = session.lastOutput || "";
+          const newOutput = currentOutput + delta.text;
+          // 更新状态，但不添加到 recent_events（避免事件过多）
+          this.store.updateSession(sessionId, {
+            ...sdkPatch,
+            lastOutput: clip(newOutput, this.config.panelOutputLimit),
+            lastStatusText: clip("正在生成输出...", this.config.panelStatusLimit),
+          });
+        } else if (delta.type === "thinking_delta" && delta.thinking) {
+          // 累积思考过程到 lastThinking
+          const currentThinking = session.lastThinking || "";
+          const newThinking = currentThinking + delta.thinking;
+          this.store.updateSession(sessionId, {
+            ...sdkPatch,
+            lastThinking: clip(newThinking, this.config.panelOutputLimit),
+          });
+        }
+        return;
+      }
+      case "content_block_start": {
+        // 内容块开始
+        const block = event.content_block;
+        if (block?.type === "text") {
+          this.logger.debug({ sessionId, runId, index: event.index }, "Text block start");
+        } else if (block?.type === "tool_use") {
+          // 工具调用开始
+          const toolName = typeof block.name === "string" ? block.name : "Tool";
+          this.updateSessionState(
+            sessionId,
+            {
+              ...sdkPatch,
+              lastStatusText: clip(`正在调用工具: ${toolName}`, this.config.panelStatusLimit),
+            },
+            "tool.use.start",
+            `→ ${toolName} (开始)`,
+          );
+        }
+        return;
+      }
+      case "content_block_stop": {
+        // 内容块结束
+        this.logger.debug({ sessionId, runId, index: event.index }, "Content block stop");
+        return;
+      }
+      case "message_start": {
+        // 消息开始
+        this.logger.debug({ sessionId, runId, model: event.message?.model }, "Message start");
+        return;
+      }
+      case "message_stop": {
+        // 消息结束
+        this.logger.debug({ sessionId, runId }, "Message stop");
         return;
       }
       default:

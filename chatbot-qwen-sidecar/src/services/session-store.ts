@@ -38,6 +38,7 @@ interface PersistedSessionRecord {
   lastStatus: SidecarStatus;
   lastStatusText: string;
   lastOutput: string;
+  lastThinking: string;
   recentEvents: RecentEvent[];
   eventVersion: number;
   updatedAt: number;
@@ -107,6 +108,7 @@ export class SessionStore {
         lastStatus: session.lastStatus,
         lastStatusText: session.lastStatusText,
         lastOutput: session.lastOutput,
+        lastThinking: session.lastThinking,
         recentEvents: session.recentEvents,
         eventVersion: session.eventVersion,
         updatedAt: session.updatedAt,
@@ -147,6 +149,7 @@ export class SessionStore {
         lastStatus: "idle",
         lastStatusText: normalizeStatusText(statusText, `已切换项目：${projectId}`),
         lastOutput: "",
+        lastThinking: "",
         recentEvents: [this.createRecentEvent("project.switched", normalizeStatusText(statusText, `已切换项目：${projectId}`))],
         eventVersion: existing.eventVersion + 1,
         updatedAt: nowUnix(),
@@ -169,6 +172,7 @@ export class SessionStore {
       lastStatus: "idle",
       lastStatusText: "Claude 模式已开启",
       lastOutput: "",
+      lastThinking: "",
       recentEvents: [this.createRecentEvent("session.created", "Claude 模式已开启")],
       eventVersion: 1,
       updatedAt: nowUnix(),
@@ -248,6 +252,7 @@ export class SessionStore {
       lastStatus: "idle",
       lastStatusText: statusText,
       lastOutput: "",
+      lastThinking: "",
       recentEvents,
       eventVersion: session.eventVersion + 1,
       updatedAt: nowUnix(),
@@ -406,6 +411,7 @@ export class SessionStore {
       status: session.lastStatus,
       status_text: session.lastStatusText,
       output: session.lastOutput,
+      thinking: session.lastThinking,
       pending_request: session.pendingRequest ?? null,
       recent_events: [...session.recentEvents],
       event_version: session.eventVersion,

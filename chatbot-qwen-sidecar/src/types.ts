@@ -35,6 +35,7 @@ export interface SidecarResponse {
   status?: SidecarStatus;
   status_text?: string;
   output?: string;
+  thinking?: string;
   error?: string;
   pending_request?: PendingRequest | null;
   recent_events?: RecentEvent[];
@@ -222,6 +223,7 @@ export interface SessionRecord {
   lastStatus: SidecarStatus;
   lastStatusText: string;
   lastOutput: string;
+  lastThinking: string;
   recentEvents: RecentEvent[];
   eventVersion: number;
   pendingRequest?: PendingRequest;
