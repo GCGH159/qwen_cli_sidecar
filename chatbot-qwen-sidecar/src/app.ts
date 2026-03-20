@@ -145,6 +145,10 @@ export function createApp(config: SidecarConfig): FastifyInstance {
 }
 
 function enforceApiKey(config: SidecarConfig, request: FastifyRequest, reply: FastifyReply): void {
+  // 跳过 OPTIONS 预检请求，否则 CORS 预检会因缺少 Authorization header 而失败
+  if (request.method === "OPTIONS") {
+    return;
+  }
   if (!config.sidecarApiKey) {
     return;
   }

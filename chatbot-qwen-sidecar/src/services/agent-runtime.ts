@@ -88,6 +88,7 @@ export class AgentRuntime {
       normalizedSdkSessionId,
       project.id,
       clip(`已绑定历史会话：${normalizedSdkSessionId}`, this.config.panelStatusLimit),
+      workspaceDir,
     );
     return this.store.toResponse(attached);
   }
@@ -132,6 +133,7 @@ export class AgentRuntime {
       normalizedSdkSessionId,
       project.id,
       clip(`已关联 SDK 会话：${normalizedSdkSessionId}`, this.config.panelStatusLimit),
+      effectiveWorkspaceDir,
     );
 
     return this.store.toResponse(attached);
@@ -477,10 +479,13 @@ export class AgentRuntime {
 
     const project = this.resolveProjectForSession(session);
 
+    // 优先使用 session 中存储的 workspaceDir（对于恢复的 SDK 会话特别重要）
+    const effectiveCwd = session.workspaceDir || project.workspaceDir;
+
     const options = {
       abortController,
       canUseTool,
-      cwd: project.workspaceDir,
+      cwd: effectiveCwd,
       env: buildAgentEnv(this.config),
       includePartialMessages: this.config.includePartialMessages,
       maxSessionTurns: this.config.queryMaxTurns,
@@ -489,7 +494,7 @@ export class AgentRuntime {
       ...(session.shouldResume ? { resume: session.sdkSessionId } : { sessionId: session.sdkSessionId }),
     };
     this.logger.info(
-      { model: this.config.model, authType: this.config.qwenAuthType, includePartialMessages: this.config.includePartialMessages },
+      { model: this.config.model, authType: this.config.qwenAuthType, cwd: effectiveCwd },
       "buildQueryOptions: 模型配置"
     );
     return options;

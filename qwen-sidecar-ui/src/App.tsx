@@ -2,7 +2,7 @@ import { useState, useEffect, useRef, useCallback } from 'react'
 import './App.css'
 
 // API 基础 URL - 优先使用环境变量，否则自动使用当前页面的 hostname
-const API_BASE_URL = import.meta.env.VITE_API_BASE_URL || `${window.location.protocol}//${window.location.hostname}:8099`
+const API_BASE_URL = import.meta.env.VITE_API_BASE_URL || `${window.location.protocol}//${"127.0.0.1"}:8099`
 
 // 轮询间隔（毫秒）
 const POLL_INTERVAL = 1000
@@ -84,10 +84,12 @@ function App() {
   const [sdkWorkspaceDir, setSdkWorkspaceDir] = useState('/home/admin/com/workspace 10')
   const [sdkSessionIdInput, setSdkSessionIdInput] = useState('')
 
-  // 选择 SDK 会话
-  const selectSdkSession = (sessionId: string) => {
-    setSelectedSdkSession(sessionId)
-    getSdkSessionMessages(sessionId)
+  // 选择 SDK 会话并自动关联
+  const selectSdkSession = (session: SdkSessionSummary) => {
+    setSelectedSdkSession(session.session_id)
+    getSdkSessionMessages(session.session_id)
+    // 自动关联到 sidecar 会话，使用会话原有的工作目录
+    resolveSession(session.session_id, session.cwd)
   }
 
   // 消息发送状态
@@ -302,6 +304,51 @@ function App() {
     }
   }
 
+  // 通过 SDK 会话 ID 解析或创建 sidecar 会话
+  const resolveSession = async (sdkSessionId: string, sessionCwd?: string) => {
+    if (!sdkSessionId) {
+      setError('请输入 SDK 会话 ID')
+      return
+    }
+
+    setLoading(true)
+    setError('')
+
+    try {
+      const response = await fetch(`${API_BASE_URL}/sessions/resolve`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          sdk_session_id: sdkSessionId,
+          project_id: projectId || undefined,
+          workspace_dir: sessionCwd || workspaceDir || undefined
+        })
+      })
+
+      const data = await response.json()
+      if (response.ok) {
+        setCurrentSession(data)
+        setSessionId(data.session_id || '')
+        // 更新工作目录和项目名称
+        if (sessionCwd) {
+          setWorkspaceDir(sessionCwd)
+          // 从路径中提取最后一个文件夹名称作为项目名称
+          const folderName = sessionCwd.split('/').filter(Boolean).pop() || ''
+          if (folderName) {
+            setProjectId(folderName)
+          }
+        }
+        setChatHistory([{role: 'system', content: data.status_text || '已关联 SDK 会话'}])
+      } else {
+        setError(data.error || '解析会话失败')
+      }
+    } catch (err) {
+      setError('网络错误: ' + (err as Error).message)
+    } finally {
+      setLoading(false)
+    }
+  }
+
   // 响应审批请求
   const respondApproval = async (decision: 'allow' | 'deny') => {
     if (!currentSession?.pending_request) {
@@ -495,6 +542,14 @@ function App() {
                     >
                       查询详情
                     </button>
+                    <button
+                      onClick={() => resolveSession(sdkSessionIdInput)}
+                      disabled={loading || !sdkSessionIdInput.trim()}
+                      className="bg-teal-500 text-white px-4 py-2 rounded-md hover:bg-teal-600 disabled:bg-gray-400"
+                      title="关联此 SDK 会话到 sidecar"
+                    >
+                      关联
+                    </button>
                   </div>
                 </div>
                 <button
@@ -513,7 +568,7 @@ function App() {
                       {sdkSessionList.map((session) => (
                         <div
                           key={session.session_id}
-                          onClick={() => selectSdkSession(session.session_id)}
+                          onClick={() => selectSdkSession(session)}
                           className={`p-3 border rounded-lg cursor-pointer transition-colors ${
                             selectedSdkSession === session.session_id
                               ? 'border-teal-500 bg-teal-50'

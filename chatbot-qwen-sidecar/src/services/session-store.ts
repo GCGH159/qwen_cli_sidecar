@@ -233,7 +233,7 @@ export class SessionStore {
     return merged;
   }
 
-  attachSdkSession(sessionId: string, sdkSessionId: string, projectId: string, statusText: string): SessionRecord {
+  attachSdkSession(sessionId: string, sdkSessionId: string, projectId: string, statusText: string, workspaceDir?: string): SessionRecord {
     const session = this.requireSession(sessionId);
     session.pendingResolvers.clear();
     const recentEvents: RecentEvent[] = [];
@@ -244,6 +244,7 @@ export class SessionStore {
     const merged: SessionRecord = {
       ...session,
       projectId,
+      workspaceDir: workspaceDir || session.workspaceDir,
       sdkSessionId,
       shouldResume: true,
       activeRunId: undefined,
